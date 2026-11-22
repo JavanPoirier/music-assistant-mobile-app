@@ -69,8 +69,11 @@ class LocalPlayerAdapterTest {
             playerFactory = { _, _, _ -> player },
             deviceAudioSource = DeviceAudioSource(
                 UnsupportedDeviceAudioShare(),
-                MutableStateFlow(null),
-                MutableStateFlow(SourceCodec.FLAC),
+                instanceId = MutableStateFlow(null),
+                codec = MutableStateFlow(SourceCodec.FLAC),
+                serverId = MutableStateFlow(null),
+                settings = settings,
+                scope = scope,
             ),
         )
     }

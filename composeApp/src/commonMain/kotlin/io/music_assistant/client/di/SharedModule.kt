@@ -179,6 +179,11 @@ fun sharedModule(
                     .map { state -> (state as? DataState.Data)?.data?.let(::sendspinSourceInstanceId) }
                     .stateIn(scope, SharingStarted.Eagerly, null),
                 codec = get<SettingsRepository>().deviceAudioShareCodec,
+                serverId = get<ServiceClient>().sessionState
+                    .map { (it as? HasConnectionData)?.serverInfo?.serverId }
+                    .stateIn(scope, SharingStarted.Eagerly, null),
+                settings = get(),
+                scope = scope,
             )
         }
         singleOf(::LocalPlayerAdapter)      // Local player: app side of the Sendspin module
