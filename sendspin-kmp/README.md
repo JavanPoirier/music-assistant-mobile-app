@@ -328,6 +328,7 @@ The role is available on `WireVersion.SPEC_1_0` only.
 | `AudioCapture` | The input. `frames()` is a cold flow of PCM blocks. The player collects it only while the server wants the stream. |
 | `CapturedAudio` | One PCM block and the time of its first sample, on `SendspinDeps.clock`. |
 | `SourceDialect` | The revision of the role that the server has. See below. |
+| `SourceCodec` | `PCM` or `FLAC` (the default), in `SourceConfig.codec`. See below. |
 | `EncoderFactory` | Optional, in `SendspinDeps.encoders`. It gives the FLAC encoder. |
 | `SourceStatus` | `Off`, `Refused`, `Unpaired`, `Ready`, or `Streaming`, in `PlayerState.Connected.source`. |
 | `SourceSignal` | `Present` or `Absent`, the signal that the source last reported, in `PlayerState.Connected.sourceSignal`. |
@@ -356,10 +357,15 @@ connection and each stream starts `present`. The signal keeps its value after a 
 a server that stops a silent source does not get a `present` that would start it again. `SPEC`
 has no `line_sense`, so it always reports `present`. Other bit depths are always `present`.
 
-**Codec.** The stream is FLAC if the `EncoderFactory` gives an encoder. The stream is PCM if
-there is no factory, if the encoder fails, or if the encoder gives no codec header in 2 seconds
-of audio. After a failure, the player uses PCM until the application disables it. A PCM chunk
-is 20 ms. `AndroidEncoderFactory` gives a `MediaCodec` FLAC encoder for 16-bit input.
+**Codec.** `SourceConfig.codec` selects the codec, `SourceCodec.FLAC` by default. With
+`SourceCodec.PCM`, the player sends PCM and does not ask the `EncoderFactory` for an encoder.
+PCM has no encoder delay and uses no encoder CPU, but it sends about twice the bytes of FLAC.
+With `SourceCodec.FLAC`, the stream is FLAC if the `EncoderFactory` gives an encoder. The stream
+is PCM if there is no factory, if the encoder fails, or if the encoder gives no codec header in
+2 seconds of audio. After a failure, the player uses PCM until the application disables it. A
+PCM chunk is 20 ms. `AndroidEncoderFactory` gives a `MediaCodec` FLAC encoder for 16-bit input.
+The codec is part of `SourceConfig`, so a change of the codec restarts the connection. Change
+it between captures, not during one.
 
 **Time.** Each chunk has the server time of its first sample. The player converts the capture
 time with the clock filter. If the link stalls, the player drops the audio that is older than
