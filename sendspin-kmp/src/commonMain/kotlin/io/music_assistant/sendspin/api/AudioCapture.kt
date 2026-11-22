@@ -36,12 +36,25 @@ public class CapturedAudio(
  * restarts the connection, because the roles travel in `client/hello`. A change of
  * [codec] restarts it too, because the config is one value; [codec] does not travel in
  * `client/hello`, so an application that changes it only between captures loses nothing.
+ *
+ * [maxLatencyMs] bounds the delay that the player adds after a stalled link: audio that
+ * is older than this when its turn to send comes is dropped, and the queue holds no more
+ * than this much 20 ms audio. A change also restarts the connection.
  */
 public data class SourceConfig(
     val capture: AudioCapture,
     val dialect: SourceDialect = SourceDialect.SPEC,
     val codec: SourceCodec = SourceCodec.FLAC,
-)
+    val maxLatencyMs: Int = DEFAULT_MAX_LATENCY_MS,
+) {
+    init {
+        require(maxLatencyMs > 0) { "maxLatencyMs must be positive: $maxLatencyMs" }
+    }
+
+    public companion object {
+        public const val DEFAULT_MAX_LATENCY_MS: Int = 500
+    }
+}
 
 /** The codec that the source asks for. The `client-stream/start` of each stream names the codec that it got. */
 public enum class SourceCodec {
