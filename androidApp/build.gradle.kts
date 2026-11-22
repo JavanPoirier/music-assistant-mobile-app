@@ -51,10 +51,10 @@ android {
     }
 
     buildTypes {
-        // Spill test build only (spill/all-fixes): installs next to the store app. Never upstream.
+        // Spill baseline build only (spill/baseline): installs next to the store app and MA Spill. Never upstream.
         debug {
-            applicationIdSuffix = ".spill"
-            versionNameSuffix = "-spill"
+            applicationIdSuffix = ".spillbase"
+            versionNameSuffix = "-spill-baseline"
         }
 
         release {
