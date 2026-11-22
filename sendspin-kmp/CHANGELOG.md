@@ -2,6 +2,16 @@
 
 All changes to `io.github.music-assistant:sendspin-kmp` are in this file.
 
+## Unreleased
+
+- Source line sense: with `SourceDialect.RC1`, which advertises `line_sense`, the source now
+  reports `client/state.source.signal = "absent"` after 5 seconds of silence in a stream (every
+  sample at or below about -70 dBFS), and `"present"` on the first block above it. The server can
+  then stop a silent source (Music Assistant does after 60 seconds). `SourceDialect.SPEC` always
+  reports `"present"`, as before.
+- New `SourceSignal` (`Present`, `Absent`) and `PlayerState.Connected.sourceSignal`, the signal that
+  the source last reported. The parameter has a default value, so the source stays compatible.
+
 ## 0.2.0
 
 - Sendspin `source@v1` role: the client can send audio to the server. Set
