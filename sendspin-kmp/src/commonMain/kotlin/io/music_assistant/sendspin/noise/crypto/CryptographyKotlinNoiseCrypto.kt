@@ -47,6 +47,8 @@ internal class CryptographyKotlinNoiseCrypto(
         ciphertext: ByteArray,
     ): ByteArray? = platform.aead.decrypt(key, nonce, associatedData, ciphertext)
 
+    override fun aeadCipher(key: ByteArray): AeadCipher = platform.aead.keyed(key)
+
     override suspend fun sha256(data: ByteArray): ByteArray = sha256Hasher.hash(data)
 
     override suspend fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {

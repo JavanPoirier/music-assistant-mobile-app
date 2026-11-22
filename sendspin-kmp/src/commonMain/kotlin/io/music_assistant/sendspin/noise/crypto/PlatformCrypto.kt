@@ -36,6 +36,21 @@ internal interface AeadBackend {
         associatedData: ByteArray,
         ciphertext: ByteArray,
     ): ByteArray?
+
+    /**
+     * A cipher bound to [key], for one Noise `CipherState`. The default decodes the key
+     * for each message, like [encrypt] and [decrypt]; a backend overrides it to set the
+     * key up once.
+     */
+    fun keyed(key: ByteArray): AeadCipher = StatelessAeadCipher(this, key)
+}
+
+private class StatelessAeadCipher(private val backend: AeadBackend, private val key: ByteArray) : AeadCipher {
+    override suspend fun encrypt(nonce: ByteArray, associatedData: ByteArray, plaintext: ByteArray): ByteArray =
+        backend.encrypt(key, nonce, associatedData, plaintext)
+
+    override suspend fun decrypt(nonce: ByteArray, associatedData: ByteArray, ciphertext: ByteArray): ByteArray? =
+        backend.decrypt(key, nonce, associatedData, ciphertext)
 }
 
 /**
@@ -43,7 +58,8 @@ internal interface AeadBackend {
  * registers. The algorithm is deliberately NOT cached: the JDK provider pools Cipher
  * instances per algorithm handle, and a shared pool trips the JDK's key+nonce-reuse guard
  * when one process runs both Noise roles (loopback tests) — encrypt and decrypt
- * legitimately use the same key and nonce there.
+ * legitimately use the same key and nonce there. For the same reason it keeps the default
+ * [AeadBackend.keyed], which sets the key up for each message.
  */
 internal class CryptographyKotlinAead(private val provider: CryptographyProvider) : AeadBackend {
     private val logger = Logger.withTag("Sendspin.NoiseCrypto")

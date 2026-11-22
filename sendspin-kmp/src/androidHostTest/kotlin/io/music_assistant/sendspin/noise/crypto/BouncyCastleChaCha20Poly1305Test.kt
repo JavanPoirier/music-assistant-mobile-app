@@ -5,6 +5,7 @@ import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 /**
@@ -64,6 +65,46 @@ class BouncyCastleChaCha20Poly1305Test {
         assertNull(bc.decrypt(key, nonce, aad, sealed.copyOf().also { it[it.lastIndex] = (it.last() + 1).toByte() }))
         assertNull(bc.decrypt(key, nonce, byteArrayOf(9), sealed))
         assertNull(bc.decrypt(key, nonce, aad, sealed.copyOf(15)))
+    }
+
+    @Test
+    fun aKeyedCipherMatchesThePerMessageCipherInSequence() = runTest {
+        val key = CryptographyRandom.nextBytes(32)
+        val sender = bc.keyed(key)
+        val receiver = bc.keyed(key)
+        repeat(300) { n ->
+            val nonce = ByteArray(12).also {
+                it[4] = n.toByte()
+            it[5] = (n shr 8).toByte()
+            }
+            val aad = CryptographyRandom.nextBytes(n % 5)
+            val plaintext = CryptographyRandom.nextBytes(n * 13)
+
+            val sealed = sender.encrypt(nonce, aad, plaintext)
+            assertContentEquals(bc.encrypt(key, nonce, aad, plaintext), sealed, "message $n")
+            assertContentEquals(plaintext, receiver.decrypt(nonce, aad, sealed), "message $n")
+        }
+    }
+
+    @Test
+    fun aKeyedCipherRefusesToEncryptTwiceUnderOneNonce() = runTest {
+        val cipher = bc.keyed(CryptographyRandom.nextBytes(32))
+        val nonce = CryptographyRandom.nextBytes(12)
+        cipher.encrypt(nonce, byteArrayOf(), byteArrayOf(1))
+
+        // BouncyCastle's reuse guard stays armed on the cached instance.
+        assertFailsWith<IllegalArgumentException> { cipher.encrypt(nonce, byteArrayOf(), byteArrayOf(2)) }
+    }
+
+    @Test
+    fun aKeyedCipherSurvivesAFailedDecryption() = runTest {
+        val key = CryptographyRandom.nextBytes(32)
+        val nonce = CryptographyRandom.nextBytes(12)
+        val sealed = bc.encrypt(key, nonce, byteArrayOf(), "audio".encodeToByteArray())
+        val receiver = bc.keyed(key)
+
+        assertNull(receiver.decrypt(nonce, byteArrayOf(), sealed.copyOf().also { it[0] = (it[0] + 1).toByte() }))
+        assertContentEquals("audio".encodeToByteArray(), receiver.decrypt(nonce, byteArrayOf(), sealed))
     }
 
     private fun hex(value: String) =
