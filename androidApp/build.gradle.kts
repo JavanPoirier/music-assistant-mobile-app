@@ -51,6 +51,12 @@ android {
     }
 
     buildTypes {
+        // Spill test build only (spill/all-fixes): installs next to the store app. Never upstream.
+        debug {
+            applicationIdSuffix = ".spill"
+            versionNameSuffix = "-spill"
+        }
+
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
