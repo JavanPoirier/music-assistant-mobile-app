@@ -2,6 +2,14 @@
 
 All changes to `io.github.music-assistant:sendspin-kmp` are in this file.
 
+## Unreleased
+
+- `SourceConfig.maxLatencyMs` (default 500 ms, the old fixed value) sets the age limit of source
+  audio after a stalled link. The send queue now holds only that much 20 ms audio (26 chunks by
+  default, before 32), and a smaller value gives a smaller queue. A change restarts the
+  connection, as for the other `SourceConfig` fields. The constructor and `copy` have a new parameter
+  with a default value, so code that was compiled against 0.2.0 must be compiled again.
+
 ## 0.2.0
 
 - Sendspin `source@v1` role: the client can send audio to the server. Set
