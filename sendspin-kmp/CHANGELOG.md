@@ -11,6 +11,9 @@ All changes to `io.github.music-assistant:sendspin-kmp` are in this file.
   reports `"present"`, as before.
 - New `SourceSignal` (`Present`, `Absent`) and `PlayerState.Connected.sourceSignal`, the signal that
   the source last reported. The parameter has a default value, so the source stays compatible.
+- `SourceStatus.Unpaired`: the server activated an unpaired session, which never gets the source
+  role. Before, that session gave `SourceStatus.Off`, the same as no answer. A `when` over
+  `SourceStatus` without an `else` branch needs the new case.
 
 ## 0.2.0
 

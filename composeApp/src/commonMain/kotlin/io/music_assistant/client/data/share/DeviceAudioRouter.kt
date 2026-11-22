@@ -11,9 +11,12 @@ import io.music_assistant.sendspin.api.SourceDialect
 import io.music_assistant.sendspin.api.SourceSignal
 import io.music_assistant.sendspin.api.SourceStatus
 import io.music_assistant.sendspin.api.WireVersion
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +35,7 @@ import musicassistantclient.composeapp.generated.resources.device_audio_end_revo
 import musicassistantclient.composeapp.generated.resources.device_audio_end_server_stopped
 import musicassistantclient.composeapp.generated.resources.device_audio_end_silence
 import musicassistantclient.composeapp.generated.resources.device_audio_end_timeout
+import musicassistantclient.composeapp.generated.resources.device_audio_end_unpaired
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 
@@ -55,6 +59,12 @@ enum class DeviceAudioShareEnd(val message: StringResource) {
     Silence(Res.string.device_audio_end_silence),
     ConnectionLost(Res.string.device_audio_end_connection_lost),
     Timeout(Res.string.device_audio_end_timeout),
+
+    /** The system did not accept the capture consent, so no capture started. */
+    CaptureFailed(Res.string.device_audio_end_timeout),
+
+    /** The local player is not paired with the server, which grants the source only to a paired one. */
+    Unpaired(Res.string.device_audio_end_unpaired),
 }
 
 /**
@@ -96,6 +106,12 @@ class DeviceAudioRouter(
     val state: StateFlow<DeviceAudioShareState> = _state
     private var job: Job? = null
 
+    /**
+     * Guards [_state], [job] and [playedQueueId]. A share can end from the user, the capture
+     * collector and the share job at once, on several threads; only the first end acts.
+     */
+    private val lock = SynchronizedObject()
+
     /** The queue that got the play request of this share; null before the request and after the end. */
     private var playedQueueId: String? = null
 
@@ -120,32 +136,59 @@ class DeviceAudioRouter(
         // The capture can end outside the app: the notification, the system UI, another capture.
         scope.launch {
             share.capture.filter { it == null }.collect {
-                if (_state.value != DeviceAudioShareState.Idle) {
-                    end(DeviceAudioShareEnd.CaptureRevoked.takeIf { share.endedBySystem })
-                }
+                if (_state.value != DeviceAudioShareState.Idle) end(captureEndCause())
+            }
+        }
+        // A rejected consent leaves the capture null all along: nothing else tells.
+        scope.launch {
+            share.startFailures.collect {
+                if (_state.value != DeviceAudioShareState.Idle) end(DeviceAudioShareEnd.CaptureFailed)
             }
         }
     }
+
+    /** The cause once the capture is gone: none for a stop by the user. */
+    private fun captureEndCause(): DeviceAudioShareEnd? = DeviceAudioShareEnd.CaptureRevoked.takeIf { share.endedBySystem }
 
     /**
      * Plays the device audio on [queueId]. Call it after the platform capture started. A share in
      * progress moves to the new queue.
      */
     fun route(queueId: String) {
+        synchronized(lock) { start(queueId) }
+    }
+
+    private fun start(queueId: String) {
         job?.cancel()
         _state.value = DeviceAudioShareState.Starting(queueId)
         job = scope.launch {
             val uri = awaitAccepted() ?: return@launch
             if (!awaitListed(uri)) return@launch end(DeviceAudioShareEnd.Timeout)
             log.i { "The server accepted the source. Playing it on $queueId" }
-            play(PlayRequest(queueOrPlayerId = queueId, media = listOf(uri), option = QueueOption.REPLACE))
-            playedQueueId = queueId
+            // An end in between cancels this job: then no request goes out that nothing releases.
+            synchronized(lock) {
+                ensureActive()
+                play(PlayRequest(queueOrPlayerId = queueId, media = listOf(uri), option = QueueOption.REPLACE))
+                playedQueueId = queueId
+            }
             withTimeoutOrNull(STREAM_WAIT_MS) { sourceStatus.first { it == SourceStatus.Streaming } }
                 ?: return@launch end(DeviceAudioShareEnd.Timeout)
-            _state.value = DeviceAudioShareState.Active
+            synchronized(lock) {
+                ensureActive()
+                _state.value = DeviceAudioShareState.Active
+            }
             sourceStatus.first { it != SourceStatus.Streaming }
-            end(serverEndCause(playerState.value))
+            end(streamEndCause())
         }
+    }
+
+    /**
+     * Why the stream stopped. A capture that ended stops the stream too, and its cause wins: the
+     * capture clears before the stream reports the end.
+     */
+    private fun streamEndCause(): DeviceAudioShareEnd? = when {
+        share.capture.value == null -> captureEndCause()
+        else -> serverEndCause(playerState.value)
     }
 
     /** The user ends the share. */
@@ -165,6 +208,7 @@ class DeviceAudioRouter(
                 sourceStatus.dropWhile { it == SourceStatus.Refused }
                     .first { it != SourceStatus.Off }
             } ?: return endAndNull(DeviceAudioShareEnd.Timeout)
+            if (status == SourceStatus.Unpaired) return endAndNull(DeviceAudioShareEnd.Unpaired)
             if (status != SourceStatus.Refused) {
                 // Not [sourceUri]: that flow gets the player state one dispatch later.
                 return sourceUriOf(source.instanceId.value, playerState.value)
@@ -201,7 +245,15 @@ class DeviceAudioRouter(
         return null
     }
 
+    /**
+     * Ends the share once. The lock is reentrant, and [Job.cancel] does not wait for the job, so
+     * the share job can end itself here.
+     */
     private fun end(cause: DeviceAudioShareEnd?) {
+        synchronized(lock) { endLocked(cause) }
+    }
+
+    private fun endLocked(cause: DeviceAudioShareEnd?) {
         if (_state.value == DeviceAudioShareState.Idle && share.capture.value == null) return
         log.i { "Share ended: ${cause ?: "stopped by the user"}" }
         _state.value = DeviceAudioShareState.Idle
@@ -209,8 +261,9 @@ class DeviceAudioRouter(
         // for that time. So the player stops with the share. The device also stays the source of
         // the player after a stop, and the player then shows no queue: give the queue back.
         val serverEnded = cause == DeviceAudioShareEnd.ServerStopped || cause == DeviceAudioShareEnd.Silence
-        playedQueueId?.let { releasePlayer(it, !serverEnded) }
+        val played = playedQueueId
         playedQueueId = null
+        played?.let { releasePlayer(it, !serverEnded) }
         share.stop()
         cause?.let { scope.launch { errorBus.emit(describe(it.message)) } }
         job?.cancel()
