@@ -51,8 +51,6 @@ private object BouncyCastleChaCha20Poly1305 : AeadBackend {
             null
         }
 
-    override fun keyed(key: ByteArray): AeadCipher = Keyed(key)
-
     /** A new cipher for each message: the instance holds the key and nonce state. */
     private fun process(
         forEncryption: Boolean,
@@ -60,54 +58,13 @@ private object BouncyCastleChaCha20Poly1305 : AeadBackend {
         nonce: ByteArray,
         associatedData: ByteArray,
         input: ByteArray,
-    ): ByteArray = ChaCha20Poly1305().run(forEncryption, KeyParameter(key), nonce, associatedData, input)
-
-    private fun ChaCha20Poly1305.run(
-        forEncryption: Boolean,
-        key: KeyParameter?,
-        nonce: ByteArray,
-        associatedData: ByteArray,
-        input: ByteArray,
     ): ByteArray {
-        init(forEncryption, AEADParameters(key, TAG_BITS, nonce, associatedData))
-        val output = ByteArray(getOutputSize(input.size))
-        val written = processBytes(input, 0, input.size, output, 0)
-        doFinal(output, written)
+        val cipher = ChaCha20Poly1305()
+        cipher.init(forEncryption, AEADParameters(KeyParameter(key), TAG_BITS, nonce, associatedData))
+        val output = ByteArray(cipher.getOutputSize(input.size))
+        val written = cipher.processBytes(input, 0, input.size, output, 0)
+        cipher.doFinal(output, written)
         return output
-    }
-
-    /**
-     * One cipher instance for the life of a key (one Noise CipherState), re-initialised for
-     * each message with only the new nonce. The key schedule runs once, on the first init;
-     * later inits pass a null key, which BouncyCastle reads as "keep the key".
-     *
-     * Nonce safety: BouncyCastle refuses (IllegalArgumentException) to init for encryption
-     * with the nonce of the previous init under the same key, so a counter bug fails loudly
-     * instead of reusing a keystream. The CipherState counter never repeats a nonce, and a
-     * new key gets a new [Keyed]. Re-init for decryption with the same nonce is allowed, and
-     * an init after a failed decryption starts clean. The instance is per CipherState, not
-     * shared, so a loopback test that holds both Noise roles in one process (same key and
-     * nonce on each side) never trips the guard.
-     */
-    private class Keyed(key: ByteArray) : AeadCipher {
-        private val cipher = ChaCha20Poly1305()
-        private var key: KeyParameter? = KeyParameter(key)
-
-        override suspend fun encrypt(nonce: ByteArray, associatedData: ByteArray, plaintext: ByteArray): ByteArray =
-            process(forEncryption = true, nonce, associatedData, plaintext)
-
-        override suspend fun decrypt(nonce: ByteArray, associatedData: ByteArray, ciphertext: ByteArray): ByteArray? =
-            try {
-                process(forEncryption = false, nonce, associatedData, ciphertext)
-            } catch (e: InvalidCipherTextException) {
-                logger.d(e) { "AEAD decrypt failed" }
-                null
-            }
-
-        // Keeps the key until a message completes: an earlier failure keys the next init again,
-        // which costs one key schedule and nothing else.
-        private fun process(forEncryption: Boolean, nonce: ByteArray, associatedData: ByteArray, input: ByteArray) =
-            cipher.run(forEncryption, key, nonce, associatedData, input).also { key = null }
     }
 }
 

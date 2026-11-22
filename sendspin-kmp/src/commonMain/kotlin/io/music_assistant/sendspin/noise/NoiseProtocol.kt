@@ -1,6 +1,5 @@
 package io.music_assistant.sendspin.noise
 
-import io.music_assistant.sendspin.noise.crypto.AeadCipher
 import io.music_assistant.sendspin.noise.crypto.NoiseCrypto
 import io.music_assistant.sendspin.noise.crypto.X25519KeyPair
 
@@ -86,17 +85,15 @@ internal class NoisePattern(
  * any DH output is mixed in).
  */
 internal class CipherState(private val crypto: NoiseCrypto) {
-    // Set up once per key: a new key always gets a new cipher, so no cipher outlives
-    // its key, and the counter below never repeats a nonce under one.
-    private var cipher: AeadCipher? = null
+    private var key: ByteArray? = null
 
     // Internal visibility so tests can drive the counter to its limit.
     internal var nonce: ULong = 0u
 
-    val hasKey: Boolean get() = cipher != null
+    val hasKey: Boolean get() = key != null
 
     internal fun initializeKey(newKey: ByteArray?) {
-        cipher = newKey?.let(crypto::aeadCipher)
+        key = newKey
         nonce = 0u
     }
 
@@ -126,17 +123,17 @@ internal class CipherState(private val crypto: NoiseCrypto) {
     }
 
     suspend fun encryptWithAd(associatedData: ByteArray, plaintext: ByteArray): ByteArray {
-        val aead = cipher ?: return plaintext
+        val k = key ?: return plaintext
         checkNonceNotExhausted()
-        val ciphertext = aead.encrypt(nonceBytes(), associatedData, plaintext)
+        val ciphertext = crypto.aeadEncrypt(k, nonceBytes(), associatedData, plaintext)
         nonce++
         return ciphertext
     }
 
     suspend fun decryptWithAd(associatedData: ByteArray, ciphertext: ByteArray): ByteArray {
-        val aead = cipher ?: return ciphertext
+        val k = key ?: return ciphertext
         checkNonceNotExhausted()
-        val plaintext = aead.decrypt(nonceBytes(), associatedData, ciphertext)
+        val plaintext = crypto.aeadDecrypt(k, nonceBytes(), associatedData, ciphertext)
             ?: throw NoiseException("AEAD authentication failed")
         nonce++
         return plaintext

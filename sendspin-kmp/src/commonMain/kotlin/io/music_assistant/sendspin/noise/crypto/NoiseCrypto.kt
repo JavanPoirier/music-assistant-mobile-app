@@ -1,16 +1,5 @@
 package io.music_assistant.sendspin.noise.crypto
 
-/**
- * ChaCha20-Poly1305 under one fixed key, with the same contract as
- * [NoiseCrypto.aeadEncrypt] and [NoiseCrypto.aeadDecrypt]. Not thread-safe.
- */
-internal interface AeadCipher {
-    suspend fun encrypt(nonce: ByteArray, associatedData: ByteArray, plaintext: ByteArray): ByteArray
-
-    /** Null when authentication fails. */
-    suspend fun decrypt(nonce: ByteArray, associatedData: ByteArray, ciphertext: ByteArray): ByteArray?
-}
-
 /** A raw X25519 keypair: both keys are 32 bytes. */
 internal class X25519KeyPair(val privateKey: ByteArray, val publicKey: ByteArray)
 
@@ -59,13 +48,6 @@ internal interface NoiseCrypto {
         associatedData: ByteArray,
         ciphertext: ByteArray,
     ): ByteArray?
-
-    /**
-     * A ChaCha20-Poly1305 cipher bound to [key], owned by one Noise CipherState
-     * and used by one caller at a time. A new key gets a new cipher: never reuse
-     * one across keys.
-     */
-    fun aeadCipher(key: ByteArray): AeadCipher
 
     /** One-shot SHA-256. */
     suspend fun sha256(data: ByteArray): ByteArray
