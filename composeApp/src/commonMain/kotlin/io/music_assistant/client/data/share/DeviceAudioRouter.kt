@@ -83,7 +83,7 @@ enum class DeviceAudioShareEnd(val message: StringResource) {
  * waits until the server accepts the source and then sends an ordinary play request for the
  * source uri through [play]. A share ends when the user stops it, when the system ends the
  * capture, when the server stops the stream (also after a minute of silence, with the
- * `line_sense` of [SourceDialect.RC1]), or when the audio link drops: a start command
+ * source's `signal`), or when the audio link drops: a start command
  * does not survive a reconnect. A share that started on Wi-Fi also ends when the Wi-Fi is gone
  * for [WIFI_GRACE_MS]: the server cannot reach a source that left the local network. The end
  * of a share stops the player that played it.

@@ -388,8 +388,8 @@ actual class PlatformFeature {
   last time (`SettingsRepository.getSourceDialect`, keyed by `server_id`), or `SourceDialect.SPEC` for a new server,
   and tries the other one if the status is `Refused`. That restarts the audio link one time. An accepted dialect
   replaces the stored one, so an upgraded server pays the retry once. A share ends when the user stops it, when the
-  system ends the capture, when the server stops the stream, or when the audio link drops. With `RC1` the module
-  reports a silent input as `absent` (`PlayerState.Connected.sourceSignal`), and the server stops the source after
+  system ends the capture, when the server stops the stream, or when the audio link drops. Under both dialects the
+  module reports a silent input as `absent` (`PlayerState.Connected.sourceSignal`), and the server stops the source after
   a minute of it. The router then ends the share with `DeviceAudioShareEnd.Silence`. A share that started on Wi-Fi
   also ends when no Wi-Fi network is back within 5 s (`DeviceAudioShareEnd.WifiLost`). The router collects
   `DeviceAudioShare.wifiConnected` only while the capture runs, so the Android network callback is registered only then.
