@@ -204,8 +204,20 @@ class DeviceAudioRouter(
                 ensureActive()
                 _state.value = DeviceAudioShareState.Active
             }
+            val longSilence = MutableStateFlow(false)
+            val silenceWatch = launch {
+                playerState.map { (it as? PlayerState.Connected)?.sourceSignal }.distinctUntilChanged()
+                    .collectLatest { signal ->
+                        longSilence.value = false
+                        if (signal == SourceSignal.Absent) {
+                            delay(SILENCE_STOP_MS)
+                            longSilence.value = true
+                        }
+                    }
+            }
             sourceStatus.first { it != SourceStatus.Streaming }
-            end(streamEndCause())
+            silenceWatch.cancel()
+            end(streamEndCause(longSilence.value))
         }
     }
 
@@ -213,9 +225,9 @@ class DeviceAudioRouter(
      * Why the stream stopped. A capture that ended stops the stream too, and its cause wins: the
      * capture clears before the stream reports the end.
      */
-    private fun streamEndCause(): DeviceAudioShareEnd? = when {
+    private fun streamEndCause(longSilence: Boolean): DeviceAudioShareEnd? = when {
         share.capture.value == null -> captureEndCause()
-        else -> serverEndCause(playerState.value)
+        else -> serverEndCause(playerState.value, longSilence)
     }
 
     /** The user ends the share. */
@@ -261,10 +273,14 @@ class DeviceAudioRouter(
         } ?: false.also { log.w { "The server does not list $uri" } }
     }
 
-    /** The signal keeps its value after the stream ends, so it tells a silence stop apart. */
-    private fun serverEndCause(player: PlayerState): DeviceAudioShareEnd = when {
+    /**
+     * A stop is the server's silence autostop only if the signal was absent for about its hold
+     * ([longSilence]). An earlier stop while the signal is absent has another cause, for example
+     * other media started on the player. The signal keeps its value after the stream ends.
+     */
+    private fun serverEndCause(player: PlayerState, longSilence: Boolean): DeviceAudioShareEnd = when {
         player !is PlayerState.Connected -> DeviceAudioShareEnd.ConnectionLost
-        player.sourceSignal == SourceSignal.Absent -> DeviceAudioShareEnd.Silence
+        player.sourceSignal == SourceSignal.Absent && longSilence -> DeviceAudioShareEnd.Silence
         else -> DeviceAudioShareEnd.ServerStopped
     }
 
@@ -320,5 +336,11 @@ class DeviceAudioRouter(
          * this time; the share is faster to end than the ~27 s that a silent socket takes.
          */
         const val WIFI_GRACE_MS = 5_000L
+
+        /**
+         * The server stops a source 60 s after it reports `absent` (its line-sense hold). A stop
+         * after this much absence counts as that autostop; the margin covers the report delay.
+         */
+        const val SILENCE_STOP_MS = 50_000L
     }
 }
