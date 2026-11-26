@@ -172,6 +172,18 @@ class VolumeButtonService(
     }
 }
 
+/** Why a volume key press changed the device volume and not the selected player. */
+enum class UnroutedVolumeKey {
+    /** The platform does not route the keys (iOS). */
+    NOT_SUPPORTED,
+
+    /** The setting that gives the keys to the selected player is off. */
+    SETTING_OFF,
+
+    /** A call or VoIP holds the audio mode. */
+    IN_CALL,
+}
+
 /** A level that a sent volume step goes to; [step] tells the steps apart. */
 data class PendingVolume(val level: Float, val step: Long)
 
@@ -199,18 +211,6 @@ internal fun nextVolume(current: Float, up: Boolean): Float {
 private const val FINE_BELOW = 10
 private const val MEDIUM_BELOW = 30
 private const val COARSE_STEP = 3
-
-/** Why a volume key press changed the device volume and not the selected player. */
-enum class UnroutedVolumeKey {
-    /** The platform does not route the keys (iOS). */
-    NOT_SUPPORTED,
-
-    /** The setting that gives the keys to the selected player is off. */
-    SETTING_OFF,
-
-    /** A call or VoIP holds the audio mode. */
-    IN_CALL,
-}
 
 /** Why a volume key press for the selected remote player changed nothing. */
 data class VolumeKeyRefusal(val reason: Reason, val playerName: String) {
